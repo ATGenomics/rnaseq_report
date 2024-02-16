@@ -13,3 +13,4 @@ _build
 *.html
 *_files/
 *_slides*
+!env*
