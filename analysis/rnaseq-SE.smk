@@ -39,7 +39,7 @@ rule fastqc_raw:
     params:
         outdir="rnaseqSE_snakemake/01_qc/a_raw_fastqc"
     conda:
-        f"{wd}/envs/rnaseqSE.yaml"
+        f"{wd}/env_files/rnaseqSE.yaml"
     shell:
         """
         fastqc {input} -f fastq --nogroup --outdir {params.outdir}
@@ -64,7 +64,7 @@ rule quality_trim:
     output:
         "rnaseqSE_snakemake/01_qc/b_trimming/{sample}.qc.fq.gz",
     conda:
-        f"{wd}/envs/rnaseqSE.yaml"
+        f"{wd}/env_files/rnaseqSE.yaml"
     shell:
         """
         trimmomatic SE {input.reads} {output} \
@@ -81,7 +81,7 @@ rule fastqc_trimmed:
     params:
         outdir="rnaseqSE_snakemake/01_qc/c_trim_fastqc"
     conda:
-        f"{wd}/envs/rnaseqSE.yaml"
+        f"{wd}/env_files/rnaseqSE.yaml"
     shell:
         """
         fastqc {input} -f fastq --outdir {params.outdir}
@@ -98,7 +98,7 @@ rule multiqc:
         raw_dir="rnaseqSE_snakemake/01_qc/a_raw_fastqc",
         trimmed_dir="rnaseqSE_snakemake/01_qc/c_trim_fastqc"
     conda:
-        f"{wd}/envs/rnaseqSE.yaml"
+        f"{wd}/env_files/rnaseqSE.yaml"
     shell:
         """
         multiqc {params.raw_dir} {params.trimmed_dir} --filename {output}
@@ -122,7 +122,7 @@ rule salmon_index:
     output:
         directory("rnaseqSE_snakemake/02_mapping/reference/salmon/salmon_index")
     conda:
-        f"{wd}/envs/rnaseqSE.yaml"
+        f"{wd}/env_files/rnaseqSE.yaml"
     shell:
         """
         salmon index --index {output} --transcripts {input} # --type quasi
@@ -141,7 +141,7 @@ rule salmon_quantify:
         + "_quant"
     threads: 4
     conda:
-        f"{wd}/envs/rnaseqSE.yaml"
+        f"{wd}/env_files/rnaseqSE.yaml"
     shell:
         """
         salmon quant -i {input.index_dir} --libType A -r {input.reads} -o {params.outdir} \
@@ -155,7 +155,7 @@ rule kallisto_index:
     output:
         "rnaseqSE_snakemake/02_mapping/reference/kallisto/kallisto_index"
     conda:
-        f"{wd}/envs/rnaseqSE.yaml"
+        f"{wd}/env_files/rnaseqSE.yaml"
     shell:
         """
         kallisto index --index {output} {input}
@@ -174,7 +174,7 @@ rule kallisto_quantify:
         + "_quant",
     threads: 4
     conda:
-        f"{wd}/envs/rnaseqSE.yaml"
+        f"{wd}/env_files/rnaseqSE.yaml"
     shell:
         """
         kallisto quant --single -l 200 -s 30 -i {input.index_file} -o {params.outdir} \
