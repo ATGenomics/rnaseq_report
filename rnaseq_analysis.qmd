@@ -1,0 +1,276 @@
+---
+title: "RNASeq Analysis"
+author: "Otoniel Maya"
+date: "16-Feb-2024"
+format: html
+editor: visual
+execute: 
+  eval: false
+---
+
+# Reporting data analysis
+
+For this analysis try to keep a estructured folder tree in the same directory. Something like this:
+
+```{r, eval=FALSE}
+project_folders <- function() {
+  base::dir.create("00_raw_data")
+  base::dir.create("01_analysis")
+  base::dir.create("02_tidy_data")
+  base::dir.create("03_r_scripts")
+  base::dir.create("04_plots")
+  base::dir.create("99_results")
+}
+
+# project_folders()
+```
+
+You can follow your own system but keep a logical and sequential order. For this tutorial we will follow this convention using Snakemake inside the `analysis` folder.
+
+This tutorial is a reproducible implementation from: [Research Technology Bioinformatics Tools for Life Science RNAseq tutorial](https://tuftsdatalab.github.io/Research_Technology_Bioinformatics/tutorials/IntroToRNAseq/lessons/05_Differential_Expression.html) to make it reproducible™.
+
+### Packages
+
+Initiate `renv`:
+
+```{r, echo=FALSE}
+#| warning: true
+
+if (!require("renv", quietly = TRUE))
+    install.packages("renv", ask=FALSE)
+
+renv::init(bioconductor = TRUE, force = TRUE)
+```
+
+### CRAN Packages installation on renv
+
+```{r}
+#| warning: false
+
+
+pkgs <- c("here", "tidyverse", "yaml")
+
+# Install the missing packages, including their dependencies
+for (lib in pkgs[!pkgs %in% installed.packages()]) {
+    install.packages(lib, dependencies = TRUE)
+}
+```
+
+Bioconductor missing dependency to handle Kallisto h5 files.
+
+```{r, echo=FALSE}
+#| warning: false
+
+BiocManager::install('rhdf5', update = FALSE)
+# BiocManager::install(c('SummarizedExperiment', 'HDO.db', 'org.Sc.sgd.db', 'DESeq2', 'apeglm', 'tximport', 'rhdf5', 'biomaRt'), update = FALSE)
+
+# renv::status()
+```
+
+Usually `renv::init()` creates a renv.lock file but if something failes it will be necessary to take a renv snapshot manually:
+
+```{r}
+renv::snapshot()
+```
+
+Loading all the packages, however, to keep track of each function a syntax `library::function()` will be used in the follow code.
+
+```{r}
+#| warning: false
+
+
+library(DESeq2)
+library(ggplot2)
+library(dplyr)
+library(magrittr)
+library(DEGreport)
+library(pheatmap)
+library(org.Sc.sgd.db)
+library(clusterProfiler)
+```
+
+### Loading data
+
+Don't forget to use here, it helps a lot with **`here::here()`**
+
+```{r}
+metadata <- readr::read_table(here::here("analysis/metadata.tsv"))
+
+kallisto_dir <-"analysis/rnaseqSE_snakemake/02_mapping/kallisto"
+
+lsdir <- list.dirs(here::here(kallisto_dir), recursive = FALSE)
+
+kallisto_files <- paste0(lsdir, "/abundance.h5")
+```
+
+```{r}
+ensembl <- biomaRt::useMart(biomart = "ensembl", 
+                            dataset = "scerevisiae_gene_ensembl")
+
+t2g <- biomaRt::getBM(attributes = c("ensembl_transcript_id",
+                                     "ensembl_gene_id",
+                                     "external_gene_name"), 
+                      mart = ensembl)
+
+txi_kallisto <- tximport::tximport(kallisto_files, 
+                                   type = "kallisto", 
+                                   tx2gene = t2g, 
+                                   ignoreTxVersion = TRUE) 
+```
+
+```{r}
+dds <- DESeq2::DESeqDataSetFromTximport(txi_kallisto, colData=metadata, design = ~ condition)
+
+dds <- DESeq2::DESeq(dds)
+```
+
+### PCA analysis
+
+```{r}
+rld <- DESeq2::rlog(dds, blind=TRUE)
+DESeq2::plotPCA(rld, intgroup="condition") + ggplot2::geom_text(ggplot2::aes(label=name))
+```
+
+## Creating contrasts and running a Wald test
+
+```{r}
+contrast <- c("condition", "SNF2", "WT")
+res_unshrunken <- DESeq2::results(dds, contrast=contrast)
+DESeq2::summary(res_unshrunken)
+```
+
+### Shrinkage of the log2 fold changes
+
+```{r}
+res <- DESeq2::lfcShrink(dds, contrast=contrast, res=res_unshrunken, type="normal")
+DESeq2::summary(res)
+head(res)
+```
+
+### Filtering to find significant genes
+
+```{r}
+padj_cutoff <- 0.05 # False Discovery Rate cutoff
+significant_results <- res[which(res$padj < padj_cutoff), ]
+```
+
+save results using customized file_name
+
+```{r}
+write.table(significant_results, 
+            'analysis/significant_padj_0.05.txt',
+            quote=FALSE)
+```
+
+### Visualization
+
+Simple plot for a single gene YOR290C (SNF2)
+
+```{r}
+plotCounts(dds, gene="YOR290C", intgroup="condition")
+```
+
+### Heatmap
+
+Plot multiple genes in a heatmap: extract the counts from the rlog transformed object and select by row name using the list of genes:
+
+```{r}
+significant_results_sorted <-  significant_results[order(significant_results$padj), ]
+significant_genes_25 <- rownames(significant_results_sorted[1:25, ])
+
+rld_counts <-  SummarizedExperiment::assay(rld)
+rld_counts_sig <- rld_counts[significant_genes_25, ]
+colnames(rld_counts_sig) <- metadata$sample
+
+annotation <- as.data.frame(metadata)
+rownames(annotation) <- annotation$sample
+annotation$sample <- NULL
+
+pheatmap::pheatmap(rld_counts_sig,
+         cluster_rows = T,
+         show_rownames = F,
+         annotation_col = annotation,
+         border_color = NA,
+         fontsize = 10,
+         scale = "row",
+         fontsize_row = 8,
+         height = 20)
+```
+
+load previously saved result
+
+```{r}
+significant_results_test <- read.table("analysis/significant_padj_0.05.txt", 
+                                  header=TRUE, row.names = 1)
+```
+
+### Volcano plot
+
+Add another column in the results table to label the significant genes using threshold of padj\<0.05 and absolute value of log2foldchange \>=1
+
+```{r}
+#| echo: true
+
+res_table <- res %>%
+    data.frame() %>%
+    tibble::rownames_to_column(var="gene") %>%
+    tibble::as_tibble()
+
+res_table <- res_table %>%
+    dplyr::mutate(threshold_OE =  padj < 0.05 & abs(log2FoldChange) >= 1)
+
+# you can view the modified table
+head(res_table)
+```
+
+make volcano plot, the significant genes will be labeled in red
+
+```{r}
+ggplot(res_table) +
+    geom_point(aes(x = log2FoldChange, 
+                   y = -log10(padj), 
+                   colour = threshold_OE)) +
+    scale_color_manual(values=c("black", "red")) +  # black v.s. red dots
+    ggtitle("SNF2 against WT") +                       # this line defines the title of the plot
+  xlab("log2 fold change") +                      # this line defines the name of the x-axis
+  ylab("-log10 adjusted p-value") +               # name of y-axis
+  scale_x_continuous(limits = c(-7.5,7.5)) +      # the axis range is set to be from -7.5 to 7.5
+  theme(legend.position = "none", #c(0.9, 0.9),
+        plot.title = element_text(size = rel(1.5), hjust = 0.5),
+        axis.title = element_text(size = rel(1.25)))  
+```
+
+### Functional analysis
+
+Run GO enrichment analysis for the top 500 genes using clusterProfiler
+
+```{r}
+significant_results_sorted <- res[order(res$padj), ]
+significant_genes_500 <- rownames(significant_results_sorted[1:500, ])
+ego <- clusterProfiler::enrichGO(gene = significant_genes_500,
+                                 keyType = "ENSEMBL",
+                                 OrgDb = org.Sc.sgd.db::org.Sc.sgd.db)
+```
+
+Output results from GO analysis to a table
+
+```{r}
+cluster_summary <- data.frame(ego)
+```
+
+Dotplot for the top 50 genes
+
+```{r}
+clusterProfiler::dotplot(ego, showCategory=10)
+```
+
+Enrichmap clusters the 50 most significant (by padj) GO terms to visualize relationships between terms
+
+```{r, eval=FALSE}
+d <- GOSemSim::godata("org.Sc.sgd.db", ont = "BP")    
+compare_cluster_GO_emap <- enrichplot::pairwise_termsim(ego,
+                                                        semData = d,
+                                                        method="Wang")
+
+clusterProfiler::emapplot(compare_cluster_GO_emap, showCategory = 10)
+```

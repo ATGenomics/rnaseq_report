@@ -1,0 +1,15 @@
+.DS_Store*
+.Spotlight-V100
+.Rdata
+*.RData
+.RData
+*.rds
+.Rhistory
+.Rproj.user/
+.Rapp.history
+_book/
+_bookdown_files/
+_build
+*.html
+*_files/
+*_slides*
