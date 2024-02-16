@@ -1,6 +1,6 @@
 from pathlib import Path
 
-wd = str(Path.home() / "Documents/Dropbox/Code/Snakemake")
+wd = str(Path.home() / "workshop/rnaseq_report/analysis")
 
 sample_links = {
     "ERR458493": "https://osf.io/5daup/download",
