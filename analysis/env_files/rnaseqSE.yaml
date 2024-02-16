@@ -1,0 +1,12 @@
+name: rnaseq
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python<3.12
+  - fastqc=0.11.9
+  - trimmomatic=0.39
+  - multiqc=1.12
+  - salmon=1.8.0
+  - kallisto=0.48.0
