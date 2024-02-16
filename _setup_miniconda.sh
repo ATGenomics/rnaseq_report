@@ -16,6 +16,6 @@ EOF
 
 export PATH=$HOME/bin/miniconda3/bin:$PATH
 
-conda create -n nextflow -yc bioconda nextflow
+# conda create -n nextflow -yc bioconda nextflow
 
 conda create -n snakemake -c conda-forge -c bioconda snakemake
